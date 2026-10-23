@@ -51,7 +51,19 @@ cd podcast-<番組slug>
 mv listen-podcast-persona-kit podcast-<番組slug>
 ```
 
-### 2. 番組を設定する
+### 2. Claude Code を起動して話しかける
+
+```bash
+claude
+```
+
+「こんにちはー」などと話しかければ、あとは Claude Code が案内しながらセットアップを進めてくれる（対象の番組を聞かれるので、LISTEN の番組 URL を伝える）。番組の設定・エピソード一覧の作成・整理データの git の用意まで終わったら、「〇〇の回を整理して」「ホストなら〜になんて答える？」のように話しかける（詳しくは「使い方」）。
+
+### 自分で進める場合
+
+Claude Code に任せず手で進めるときは、次の手順でやる（Claude Code もこの手順に沿って進める）。
+
+#### 番組を設定する
 
 ```bash
 mkdir -p config && cp templates/podcast.md config/podcast.md
@@ -68,7 +80,7 @@ host: ホスト名
 ---
 ```
 
-### 3. エピソード一覧を作る
+#### エピソード一覧を作る
 
 ```bash
 python3 scripts/sync_episodes.py          # ドライラン
@@ -77,21 +89,13 @@ python3 scripts/sync_episodes.py --apply  # 書き込む
 
 `data/private/episodes.csv` ができる。新しい回が配信されたら、同じコマンドで最新化できる（タグなど手で書いた列は上書きされない）。
 
-### 4. 整理データの git を用意する
+#### 整理データの git を用意する
 
 整理データは別の git リポジトリで管理する（理由は「データの置き場所」を参照）。
 
 ```bash
 cd data/private && git init && cd ../..
 ```
-
-### 5. Claude Code を起動する
-
-```bash
-claude
-```
-
-「〇〇の回を整理して」「ホストなら〜になんて答える？」のように話しかける（詳しくは「使い方」）。
 
 ## 使い方
 
