@@ -9,9 +9,13 @@
 
 - 指定された回は取得済み(あり)でも再取得して上書きする
 - フォロワー限定回はスキップ(認証なしでは404のため)
+- transcript.vtt が404のときは、エピソードページのHTMLに埋め込まれた文字起こしからVTTを組み立てる
+  (番組によってはVTTのURLが公開されず、ページにだけ文字起こしが表示されるため)
 - 取得結果に応じて episodes.csv の「文字起こし」列を更新する
 """
 
+import html
+import re
 import sys
 import time
 import urllib.error
@@ -50,6 +54,35 @@ def fetch_vtt(url):
         return e.code, None
 
 
+SEGMENT_RE = re.compile(
+    r'<div id="t[^"]*"[^>]*x-data="\{ start: ([\d.]+), end: ([\d.]+) \}"[^>]*>(.*?)</div>',
+    re.S,
+)
+
+
+def vtt_time(sec):
+    ms = round(float(sec) * 1000)
+    h, ms = divmod(ms, 3600000)
+    m, ms = divmod(ms, 60000)
+    s, ms = divmod(ms, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+
+
+def vtt_from_page(page_url):
+    """エピソードページのHTMLに埋め込まれた文字起こしをVTTにする。なければNone。"""
+    status, body = fetch_vtt(page_url)
+    if status != 200 or not body:
+        return None
+    cues = []
+    for start, end, inner in SEGMENT_RE.findall(body.decode("utf-8")):
+        text = html.unescape(re.sub(r"<[^>]+>", "", inner)).strip()
+        if text:
+            cues.append(f"{vtt_time(start)} --> {vtt_time(end)}\n{text}\n")
+    if not cues:
+        return None
+    return ("WEBVTT\n\n" + "\n".join(cues)).encode("utf-8")
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -86,15 +119,21 @@ def main():
 
         vtt_url = row[COL_URL].rstrip("/") + "/transcript.vtt"
         status, body = fetch_vtt(vtt_url)
+        source = ""
+        if status == 404:
+            time.sleep(REQUEST_INTERVAL_SEC)
+            body = vtt_from_page(row[COL_URL])
+            if body:
+                status, source = 200, "（ページから）"
         if status == 200 and body:
             out_path = TRANSCRIPTS_DIR / f"{slug_of(row)}.vtt"
             out_path.write_bytes(body)
             row[COL_TRANSCRIPT] = "あり"
-            print(f"取得: {label} → {out_path.relative_to(PROJECT_ROOT)} ({len(body)} bytes)")
+            print(f"取得{source}: {label} → {out_path.relative_to(PROJECT_ROOT)} ({len(body)} bytes)")
             fetched.append(key)
         elif status == 404:
             row[COL_TRANSCRIPT] = "なし"
-            print(f"なし: {label} は文字起こしが存在しません (404)")
+            print(f"なし: {label} は文字起こしが存在しません（VTT は 404、ページにもなし）")
             missing.append(key)
         else:
             print(f"警告: {label} の取得に失敗しました (HTTP {status})。状態は変更しません")

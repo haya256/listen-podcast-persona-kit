@@ -36,7 +36,6 @@ from episodes_csv import (
 from podcast_config import CSV_PATH, PROJECT_ROOT, load_config
 
 JST = timezone(timedelta(hours=9))
-PODCAST_NS = {"podcast": "https://podcastindex.org/namespace/1.0"}
 
 
 def fetch_rss(url):
@@ -46,7 +45,7 @@ def fetch_rss(url):
 
 
 def parse_items(raw):
-    """RSSの各itemを {slug, title, published_at, published_on, url, has_transcript} にする。"""
+    """RSSの各itemを {slug, title, published_at, published_on, url} にする。"""
     channel = ET.fromstring(raw).find("channel")
     items = []
     for item in channel.findall("item"):
@@ -68,7 +67,6 @@ def parse_items(raw):
                 "published_at": published_at,
                 "published_on": published_on,
                 "url": link,
-                "has_transcript": item.find("podcast:transcript", PODCAST_NS) is not None,
             }
         )
     return items
@@ -95,7 +93,8 @@ def merge(rows, items):
                     COL_PUBLISHED_ON: item["published_on"],
                     COL_FOLLOWERS_ONLY: "FALSE",
                     COL_PAID: "",
-                    COL_TRANSCRIPT: "未取得" if item["has_transcript"] else "なし",
+                    # RSS に文字起こしのタグがなくてもページにはあることがあるので、取りに行くまでは「未取得」
+                    COL_TRANSCRIPT: "未取得",
                     COL_URL: item["url"],
                     COL_TAGS: "",
                     COL_EPISODE_NO: "",
