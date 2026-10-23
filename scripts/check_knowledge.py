@@ -13,6 +13,7 @@
 - topics に書いたトピックのファイル（knowledge/topics/<名前>.md）があるか
 - そのトピックの「関連エピソード」にまとめへのリンクがあるか
 - 各トピックの「関連エピソード」が日付の新しい順か
+- 「関連エピソード」「登場エピソード」のリンク行が `- [YYYY-MM-DD](../episodes/<キー>.md)` の形で始まっているか
 - people に書いた人物のファイル（knowledge/people/<名前>.md）があり、その「登場エピソード」にまとめへのリンクがあるか
 - 各人物の「登場エピソード」が日付の新しい順か
 - topics/・people/・persona.md の中のエピソードへのリンク先が存在するか
@@ -115,6 +116,20 @@ def fix_order():
             print(f"並べ直しました: {rel(path)}")
 
 
+def malformed_items(path, heading):
+    """節の中で、エピソードへのリンクがあるのに `- [YYYY-MM-DD](...)` で始まらない行を返す。"""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if heading not in lines:
+        return []
+    bad = []
+    for line in lines[lines.index(heading) + 1:]:
+        if line.startswith("## "):
+            break
+        if LINK_RE.search(line) and not RELATED_ITEM_RE.match(line):
+            bad.append(line)
+    return bad
+
+
 def check_crlf(problems):
     data = CSV_PATH.read_bytes()
     lf_only = data.count(b"\n") - data.count(b"\r\n")
@@ -175,6 +190,8 @@ def check_topics(problems):
         if items is None:
             problems.append(f"{name}: 「{heading}」の節がありません")
             continue
+        for line in malformed_items(path, heading):
+            problems.append(f"{name}: {heading[3:]}の行が `- [YYYY-MM-DD](../episodes/<キー>.md)` の形になっていません: {line}")
         dates = [d for d, _ in items]
         if dates != sorted(dates, reverse=True):
             problems.append(f"{name}: {heading[3:]}が日付の新しい順になっていません")
