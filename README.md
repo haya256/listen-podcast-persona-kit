@@ -36,6 +36,29 @@ AI（Claude Code）と一緒に使うことを前提にしている。番組を1
 
 ## セットアップ
 
+### 1. クローンする
+
+1つの番組につき1つ、このリポジトリをクローンする。ディレクトリ名は番組に合わせておく（例: LISTEN の番組 URL `https://listen.style/p/<番組slug>` の slug を使って `podcast-<番組slug>`）。複数の番組を扱っても取り違えず、Claude Code の会話履歴やメモリもディレクトリごとに分かれる。
+
+```bash
+git clone https://github.com/haya256/listen-podcast-persona-kit.git podcast-<番組slug>
+cd podcast-<番組slug>
+```
+
+リポジトリが非公開のあいだは、`git clone` の代わりに GitHub CLI でクローンする（`gh auth login` 済みのアカウントで認証される）。
+
+```bash
+gh repo clone haya256/listen-podcast-persona-kit podcast-<番組slug>
+```
+
+デフォルトの名前（`listen-podcast-persona-kit`）でクローン済みなら、あとから名前を変えればよい。Claude Code を起動する前に変えておく（起動後に変えると、それまでの会話履歴やメモリが新しい名前のディレクトリに引き継がれない）。
+
+```bash
+mv listen-podcast-persona-kit podcast-<番組slug>
+```
+
+### 2. 番組を設定する
+
 ```bash
 mkdir -p config && cp templates/podcast.md config/podcast.md
 ```
@@ -51,7 +74,7 @@ host: ホスト名
 ---
 ```
 
-エピソード一覧を作る。
+### 3. エピソード一覧を作る
 
 ```bash
 python3 scripts/sync_episodes.py          # ドライラン
@@ -60,11 +83,21 @@ python3 scripts/sync_episodes.py --apply  # 書き込む
 
 `data/private/episodes.csv` ができる。新しい回が配信されたら、同じコマンドで最新化できる（タグなど手で書いた列は上書きされない）。
 
+### 4. 整理データの git を用意する
+
 整理データは別の git リポジトリで管理する（理由は「データの置き場所」を参照）。
 
 ```bash
-cd data/private && git init
+cd data/private && git init && cd ../..
 ```
+
+### 5. Claude Code を起動する
+
+```bash
+claude
+```
+
+「〇〇の回を整理して」「ホストなら〜になんて答える？」のように話しかける（詳しくは「使い方」）。
 
 ## 使い方
 
