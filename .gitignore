@@ -1,0 +1,16 @@
+# 対象ポッドキャストの設定（番組固有）
+config/
+
+# 番組固有のデータ（整理データは data/private/ で別途 git 管理）
+data/
+
+# PMO管理ディレクトリ（非公開）
+pmo/
+
+# ローカル環境のもの
+.claude/settings.local.json
+.obsidian/
+__pycache__/
+
+# 公開しないスキル（ローカル専用）
+.claude/skills/listen-episode-title-edit/
