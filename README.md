@@ -45,12 +45,6 @@ git clone https://github.com/haya256/listen-podcast-persona-kit.git podcast-<番
 cd podcast-<番組slug>
 ```
 
-リポジトリが非公開のあいだは、`git clone` の代わりに GitHub CLI でクローンする（`gh auth login` 済みのアカウントで認証される）。
-
-```bash
-gh repo clone haya256/listen-podcast-persona-kit podcast-<番組slug>
-```
-
 デフォルトの名前（`listen-podcast-persona-kit`）でクローン済みなら、あとから名前を変えればよい。Claude Code を起動する前に変えておく（起動後に変えると、それまでの会話履歴やメモリが新しい名前のディレクトリに引き継がれない）。
 
 ```bash
