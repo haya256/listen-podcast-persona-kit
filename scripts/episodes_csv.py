@@ -39,6 +39,7 @@ def load_rows(path=CSV_PATH):
 
 def save_rows(rows, fieldnames, path=CSV_PATH):
     """tmpに書いてから置き換える（書き込み途中で壊れないように）。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".csv.tmp")
     with open(tmp_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)

@@ -37,7 +37,7 @@ AI（Claude Code）と一緒に使うことを前提にしている。番組を1
 ## セットアップ
 
 ```bash
-cp templates/podcast.md config/podcast.md
+mkdir -p config && cp templates/podcast.md config/podcast.md
 ```
 
 `config/podcast.md` の frontmatter を対象の番組に合わせて書き換える。
