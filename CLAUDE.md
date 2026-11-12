@@ -65,6 +65,7 @@ LISTEN で配信されているポッドキャストでの発言を整理し、�
 - `scripts/fetch_transcripts.py` — 指定回の文字起こしVTTを取得する
 - `scripts/check_public.py` — 公開前に番組固有の情報の混入を検査する
 - `scripts/listen_api.py` — （応用編）LISTEN API で、RSS に載らない限定回の行と公開日時を episodes.csv に反映する（`sync`）。限定回・有料回を含む文字起こしVTTを取得する（`transcript`）。要 `LISTEN_API_TOKEN`
+- `scripts/whisper_transcribe.py` — （応用編・任意）LISTEN に文字起こしがない回を、RSS の音声から Whisper で文字起こしする。要 `whisper` コマンド
 - `scripts/check_knowledge.py` — 整理済みデータ（episodes.csv と knowledge/）の整合性を検査する
 - `templates/` — `config/podcast.md` と `knowledge/` 配下の雛形
 
@@ -88,6 +89,11 @@ LISTEN で配信されているポッドキャストでの発言を整理し、�
 
 ## エピソードを整理するとき
 - 文字起こしの取得は、ユーザーが1話ずつ指定したときだけ行う（`python3 scripts/fetch_transcripts.py <公開日時キー または slug>`）。一括取得はしない
+- `fetch_transcripts.py` の結果が「なし」（LISTEN に文字起こしがない）なら、文字起こしがないことを伝えて、その回の整理はそこで止める。Whisper による文字起こしは、こちらから提案も実行もしない
+- ユーザーが「文字起こしもして」のように文字起こしを明示的に頼んだときだけ、Whisper を使う（応用編・任意。1話ずつのルールは同じ）
+  - `whisper` コマンドがない環境なら、Whisper オプション（音声から文字起こしする任意の機能であること）を説明し、README の「応用編: Whisper で文字起こし（任意）」のセットアップを案内する
+  - `whisper` コマンドがある環境なら、その回だけ `python3 scripts/whisper_transcribe.py <キー>` で文字起こしする。音声は一時ファイルとして扱われ、処理後に削除される
+  - Whisper の文字起こしは固有名詞などの誤認識が多めなので、誤認識メモを丁寧に書き、知らない人名は推測で直さずユーザーに確認する。文の切れ目や話者の区別もないので、主語の取り違えに注意する
 - `data/private/knowledge/episodes/<キー>.md` を既存ファイルと同じ形式で作る（frontmatter の `key`/`published` を必ず入れる、要約、`[mm:ss]` 付きの発言・主張、文字起こしの誤認識メモ）
 - 原文の長い引用は避け、要約と短いフレーズにとどめる（VTTは非公開のため）
 - 発言の主語がホスト以外（ゲーム・ドラマ・本の登場人物、他人の話など）のときは、「（ゲーム内の人物の話）」のように主語を書く。特に健康・家族など私生活に見える内容は、ホスト本人の話と誤読されないようにする

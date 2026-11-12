@@ -29,6 +29,7 @@ AI（Claude Code）と一緒に使うことを前提にしている。番組を1
 | `scripts/sync_episodes.py` | RSSからエピソード一覧（`episodes.csv`）を作成・最新化 |
 | `scripts/fetch_transcripts.py` | 指定した回の文字起こし（VTT）を取得 |
 | `scripts/listen_api.py` | （応用編・任意）LISTEN の API で、RSS に載らない限定回の行と公開日時を `episodes.csv` に反映。限定回・有料回の文字起こしも取得 |
+| `scripts/whisper_transcribe.py` | （応用編・任意）LISTEN に文字起こしがない回を、音声から Whisper で文字起こし |
 | `scripts/check_knowledge.py` | 整理済みデータ（`episodes.csv` と `knowledge/`）の整合性を検査 |
 | `scripts/check_public.py` | 公開前に番組固有の情報の混入を検査 |
 | `scripts/podcast_config.py` / `scripts/episodes_csv.py` | 上のスクリプトが共用する部品（設定とパス、CSVの読み書き） |
@@ -40,6 +41,7 @@ AI（Claude Code）と一緒に使うことを前提にしている。番組を1
 
 - Python 3.9 以上。標準ライブラリだけで動くので、依存パッケージのインストールは不要
 - [Claude Code](https://claude.com/claude-code)（整理と回答をAIに任せる部分。有料。「Claude Code とは」を参照）
+- （任意）Whisper。LISTEN に文字起こしがない番組で、音声から文字起こしするときだけ必要（「応用編: Whisper で文字起こし（任意）」）
 
 ## 安全のために
 
@@ -122,7 +124,7 @@ cd data/private && git init && cd ../..
 python3 scripts/fetch_transcripts.py 20260705-073500
 ```
 
-番組によっては、文字起こしの VTT ファイルが公開されておらず、エピソードページにだけ表示されている。その場合はページに表示されている文字起こしから VTT を組み立てる。
+番組によっては、文字起こしの VTT ファイルが公開されておらず、エピソードページにだけ表示されている。その場合はページに表示されている文字起こしから VTT を組み立てる。どちらもない番組では、Whisper を入れておけば音声から文字起こしできる（「応用編: Whisper で文字起こし（任意）」）。
 
 あとは Claude Code に「この回を整理して」と頼む（タイトルや日付で伝えれば、AIが一覧から回を特定して文字起こしの取得から進める）。`CLAUDE.md` の手順に従って、次のものが作られる・更新される。
 
@@ -182,6 +184,37 @@ LISTEN_API_TOKEN=<トークン> python3 scripts/listen_api.py transcript 2026070
 - `transcript`: 指定した回の文字起こし（VTT）を取得する。指定の仕方は `fetch_transcripts.py` と同じ。番組の持ち主のトークンなら、フォロワー限定回・有料回も取れる
 - API は読み取りだけを使う。トークンにはエピソードの更新・削除の権限もあるので、扱いに注意する
 
+## 応用編: Whisper で文字起こし（任意）
+
+LISTEN に文字起こしがない番組（`fetch_transcripts.py` の結果が「なし」になる回）でも、[Whisper](https://github.com/openai/whisper) を入れておけば、RSS の音声から文字起こしできる。Whisper がなくても他の機能はすべて動く。
+
+### 入れ方
+
+`whisper` コマンドと ffmpeg が使えれば、入れ方は何でもよい。Ubuntu（WSL を含む）なら、ffmpeg 以外は sudo なしで次のように入れられる（PyTorch ごと入るので数GBある）。
+
+```bash
+sudo apt install ffmpeg   # 入っていなければ
+python3 -m venv ~/.local/share/whisper-venv
+~/.local/share/whisper-venv/bin/pip install -U openai-whisper
+ln -s ~/.local/share/whisper-venv/bin/whisper ~/.local/bin/whisper   # ~/.local/bin が PATH にある前提
+whisper --help
+```
+
+`pipx install openai-whisper` や `uv tool install openai-whisper` でもよい。モデルは初回の実行時に `~/.cache/whisper` へダウンロードされる。
+
+### 使い方
+
+```bash
+python3 scripts/whisper_transcribe.py 20260705-073500
+python3 scripts/whisper_transcribe.py 20260705-073500 --model large-v3
+```
+
+- 指定の仕方は `fetch_transcripts.py` と同じ。1話ずつ、整理したい回だけに使う
+- 音声は一時ディレクトリにダウンロードし、終わったら消す。結果は `data/transcripts/<slug>.vtt` に保存し、`episodes.csv` の「文字起こし」列を `あり` にする
+- フォロワー限定回・有料回は RSS に音声がないのでスキップする
+- モデルの既定は `turbo`（`--model` か環境変数 `WHISPER_MODEL` で変えられる）。NVIDIA の GPU があれば数分で終わる。GPU がないとかなり遅いので、`small` などに下げるとよい
+- 番組名とホスト名（`config/podcast.md`）をヒントとして渡しているが、固有名詞の誤認識は LISTEN の文字起こしより多くなりうる。整理のときに誤認識メモで補う
+
 ## データの置き場所
 
 ```
@@ -215,6 +248,7 @@ python3 scripts/check_public.py
 |---|---|---|
 | `PODCAST_DATA_DIR` | `./data` | データの置き場所を別の場所にしたいとき |
 | `LISTEN_API_TOKEN` | なし | 応用編の `listen_api.py` を使うときだけ必要 |
+| `WHISPER_MODEL` | `turbo` | 応用編の `whisper_transcribe.py` で使う Whisper のモデル |
 
 ## 注意
 

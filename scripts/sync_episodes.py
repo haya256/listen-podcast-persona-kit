@@ -45,7 +45,10 @@ def fetch_rss(url):
 
 
 def parse_items(raw):
-    """RSSの各itemを {slug, title, published_at, published_on, url} にする。"""
+    """RSSの各itemを {slug, title, published_at, published_on, url, audio_url} にする。
+
+    audio_url（enclosure の音声URL）は whisper_transcribe.py 用で、CSV には書かない。
+    """
     channel = ET.fromstring(raw).find("channel")
     items = []
     for item in channel.findall("item"):
@@ -60,8 +63,10 @@ def parse_items(raw):
             published_at = jst.strftime("%Y-%m-%d %H:%M:%S")
             published_on = jst.strftime("%Y-%m-%d")
 
+        enclosure = item.find("enclosure")
         items.append(
             {
+                "audio_url": (enclosure.get("url") or "").strip() if enclosure is not None else "",
                 "slug": link.rstrip("/").rsplit("/", 1)[-1],
                 "title": (item.findtext("title") or "").strip(),
                 "published_at": published_at,
