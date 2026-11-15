@@ -9,6 +9,7 @@
 - 1件でも見つかれば終了コード 1
 """
 
+import argparse
 import subprocess
 import sys
 
@@ -51,6 +52,7 @@ def tracked_files():
 
 
 def main():
+    argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()
     terms = search_terms()
     if not terms:
         rel = CONFIG_PATH.relative_to(PROJECT_ROOT)

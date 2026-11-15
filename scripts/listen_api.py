@@ -21,6 +21,7 @@ transcript:
 - 取得済みでも再取得して上書きし、episodes.csv の「文字起こし」列を更新する
 """
 
+import argparse
 import json
 import os
 import sys
@@ -256,9 +257,14 @@ def transcript(token, keys):
 
 
 def main():
-    args = sys.argv[1:]
-    command = args[0] if args else ""
-    if command not in ("sync", "transcript") or (command == "transcript" and len(args) < 2):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest="command")
+    sync_parser = commands.add_parser("sync", help="限定回の行と公開日時を episodes.csv に反映する")
+    sync_parser.add_argument("--apply", action="store_true", help="実際に書き込む（指定しなければドライラン）")
+    transcript_parser = commands.add_parser("transcript", help="文字起こしVTTを取得する")
+    transcript_parser.add_argument("keys", nargs="+", help="公開日時キー・CSVの公開日時表記・slug")
+    args = parser.parse_args()
+    if not args.command:
         print(__doc__.strip())
         return 0
 
@@ -267,9 +273,9 @@ def main():
         print(TOKEN_HINT, file=sys.stderr)
         return 1
 
-    if command == "transcript":
-        return transcript(token, args[1:])
-    return sync(token, "--apply" in args)
+    if args.command == "transcript":
+        return transcript(token, args.keys)
+    return sync(token, args.apply)
 
 
 if __name__ == "__main__":

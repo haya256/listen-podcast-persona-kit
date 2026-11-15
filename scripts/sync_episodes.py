@@ -12,6 +12,7 @@
 - RSSに無い既存行は削除しない（フォロワー限定回はRSSに出ないため）
 """
 
+import argparse
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -124,11 +125,12 @@ def merge(rows, items):
 
 
 def main():
-    args = sys.argv[1:]
-    apply_changes = "--apply" in args
-    rss_url = None
-    if "--rss" in args:
-        rss_url = args[args.index("--rss") + 1]
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--apply", action="store_true", help="実際に書き込む（指定しなければドライラン）")
+    parser.add_argument("--rss", metavar="URL", help="RSS の URL（省略時は config/podcast.md の rss_url）")
+    args = parser.parse_args()
+    apply_changes = args.apply
+    rss_url = args.rss
     if not rss_url:
         rss_url = load_config(required=("rss_url",))["rss_url"]
 

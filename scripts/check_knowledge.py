@@ -23,6 +23,7 @@
 --fix では、並び順のずれだけを直す（1行に複数リンクを並べた行はその場に残す）。ほかの問題は直さない
 """
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -211,8 +212,11 @@ def check_links(problems):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--fix", action="store_true", help="関連エピソード・登場エピソードを日付順に並べ直してから検査する")
+    args = parser.parse_args()
     require_csv()
-    if "--fix" in sys.argv[1:]:
+    if args.fix:
         fix_order()
     problems = []
     check_crlf(problems)

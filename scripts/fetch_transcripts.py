@@ -14,6 +14,7 @@
 - 取得結果に応じて episodes.csv の「文字起こし」列を更新する
 """
 
+import argparse
 import html
 import re
 import sys
@@ -84,7 +85,9 @@ def vtt_from_page(page_url):
 
 
 def main():
-    args = sys.argv[1:]
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("keys", nargs="*", help="公開日時キー・CSVの公開日時表記・slug")
+    args = parser.parse_args().keys
     if not args:
         print(__doc__.strip())
         return 0
