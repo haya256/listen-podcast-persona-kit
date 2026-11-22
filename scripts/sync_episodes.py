@@ -34,13 +34,13 @@ from episodes_csv import (
     save_rows,
     slug_of,
 )
-from podcast_config import CSV_PATH, PROJECT_ROOT, load_config
+from podcast_config import CSV_PATH, PROJECT_ROOT, USER_AGENT, load_config
 
 JST = timezone(timedelta(hours=9))
 
 
 def fetch_rss(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "podcast-knowledge-kit"})
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=60) as res:
         return res.read()
 

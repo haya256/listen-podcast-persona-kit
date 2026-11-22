@@ -27,8 +27,8 @@ AI（Claude Code）と一緒に使うことを前提にしている。番組を1
 |---|---|
 | `CLAUDE.md` | AIへの指示。回答の作り方、根拠の示し方、整理のルール |
 | `scripts/sync_episodes.py` | RSSからエピソード一覧（`episodes.csv`）を作成・最新化 |
-| `scripts/fetch_transcripts.py` | 指定した回の文字起こし（VTT）を取得 |
-| `scripts/listen_api.py` | （応用編・任意）LISTEN の API で、RSS に載らない限定回の行と公開日時を `episodes.csv` に反映。限定回・有料回の文字起こしも取得 |
+| `scripts/fetch_transcripts.py` | 指定した回の文字起こし（VTT）を取得（LISTEN MCP Server が使えればそれで、なければ公開の文字起こしから） |
+| `scripts/listen_mcp.py` | （応用編・任意）LISTEN の公式ツール「LISTEN MCP Server」で、限定回・有料回を含む文字起こしを取得。公開日時の補完も |
 | `scripts/whisper_transcribe.py` | （応用編・任意）LISTEN に文字起こしがない回を、音声から Whisper で文字起こし |
 | `scripts/check_knowledge.py` | 整理済みデータ（`episodes.csv` と `knowledge/`）の整合性を検査 |
 | `scripts/check_public.py` | 公開前に番組固有の情報の混入を検査 |
@@ -165,24 +165,37 @@ python3 scripts/check_knowledge.py --fix
 
 フォロワー限定回と有料回（`episodes.csv` の「フォロワー限定」列が `TRUE`、または「有料」列に金額が入っている回）は、文字起こしが手に入れば整理してよい。ただし回答には使わない。
 
-- `fetch_transcripts.py` は公開の文字起こししか取れないので、これらの回はスキップする。番組の持ち主なら、応用編の `listen_api.py transcript` で取れる
+- MCP Server を使わないときの `fetch_transcripts.py` は公開の文字起こししか取れないので、これらの回はスキップする。番組の持ち主なら、応用編の LISTEN MCP Server 連携で取れる
 - まとめの frontmatter に `access: followers` または `access: paid` を入れる
 - 中身はその回のまとめファイルだけに書き、トピックには「回答には使わない」と添えたリンクだけを置く
 - 関係する発言があるときは、回答の補足で「限定公開（または有料）の回で話している」とだけ伝え、公開日・タイムスタンプ・まとめファイルのパスを示す。タイトル・URL・中身は書かない
 
-## 応用編: LISTEN API 連携（任意）
+## 応用編: LISTEN MCP Server 連携（任意）
 
-ここまでの機能は、LISTEN の API トークンがなくてもすべて使える。番組の持ち主が LISTEN の「API Tokens」設定ページでトークンを発行すると、RSS では取れない情報にも手が届く。
+ここまでの機能は、LISTEN の API トークンがなくてもすべて使える。LISTEN の「API Tokens」設定ページでトークンを発行すると、LISTEN の公式ツール「[LISTEN MCP Server](https://listen.style/document/mcp_server)」を通して、次のことができる。
+
+- 文字起こしを、エピソードページの HTML を読み取らずに取る（`fetch_transcripts.py` は、使えるときは自動でこちらを使う）
+- 番組の持ち主なら、フォロワー限定回・有料回の文字起こしも取る
+
+必要なもの:
+
+- 環境変数 `LISTEN_API_TOKEN`。読み取りだけなので read 権限で足りる。トークンはリポジトリやファイルに書かない
+- `npx`（Node.js）。MCP Server は、ヘルプに書かれた版（v1.1.0）を `npx` で起動する
 
 ```bash
-LISTEN_API_TOKEN=<トークン> python3 scripts/listen_api.py sync           # ドライラン
-LISTEN_API_TOKEN=<トークン> python3 scripts/listen_api.py sync --apply   # 書き込む
-LISTEN_API_TOKEN=<トークン> python3 scripts/listen_api.py transcript 20260705-073500
+LISTEN_API_TOKEN=<トークン> python3 scripts/fetch_transcripts.py 20260705-073500     # MCP Server で取る
+LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py transcript 20260705-073500 # 同じ
+LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py sync                       # 公開日時の補完（ドライラン）
+LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py sync --apply               # 書き込む
 ```
 
-- `sync`: RSS に載らないフォロワー限定回を `episodes.csv` に追加し、公開日時が空の行を埋める。既存行のフォロワー限定・有料の列は書き換えない（API と食い違えば警告だけ出す）
-- `transcript`: 指定した回の文字起こし（VTT）を取得する。指定の仕方は `fetch_transcripts.py` と同じ。番組の持ち主のトークンなら、フォロワー限定回・有料回も取れる
-- API は読み取りだけを使う。トークンにはエピソードの更新・削除の権限もあるので、扱いに注意する
+1Password に保存しているなら、`LISTEN_API_TOKEN="$(op read 'op://<保管庫>/<項目>/credential')" python3 scripts/...` のように、実行のときだけ渡せる。
+
+- `transcript`: 指定した回の文字起こし（VTT）を取得する。指定の仕方は `fetch_transcripts.py` と同じ。エピソード ID は新しい50話の一覧から探し、見つからない古い回はエピソードページを1回だけ取得して探す
+- `sync`: MCP Server のエピソード一覧は新しい50話だけで、slug・公開範囲・価格を返さない。そのため行は追加せず、公開日時が空の行を埋めることと、`episodes.csv` にない回（RSS に載らないフォロワー限定回など）を表示することだけをする
+- 番組 ID は `config/podcast.md` の `podcast_id:` に書いておける。なければ番組名で検索し、1件に決まれば使って、書く値を表示する
+- 呼ぶのは読み取りのツールだけ。文字起こしの編集などの更新系のツールは呼ばない
+- LISTEN の GraphQL API は直接呼ばない。LISTEN の [API ドキュメント](https://listen.style/api-docs)で、スマホアプリ用の内部 API として「依存しないでください」とされているため
 
 ## 応用編: Whisper で文字起こし（任意）
 
@@ -247,12 +260,22 @@ python3 scripts/check_public.py
 | 変数 | 既定値 | 用途 |
 |---|---|---|
 | `PODCAST_DATA_DIR` | `./data` | データの置き場所を別の場所にしたいとき |
-| `LISTEN_API_TOKEN` | なし | 応用編の `listen_api.py` を使うときだけ必要 |
+| `LISTEN_API_TOKEN` | なし | 応用編の LISTEN MCP Server 連携（`listen_mcp.py`、`fetch_transcripts.py`）を使うときだけ必要 |
 | `WHISPER_MODEL` | `turbo` | 応用編の `whisper_transcribe.py` で使う Whisper のモデル |
+
+## LISTEN へのアクセスの作法
+
+このキットは、LISTEN にアクセスするとき次のようにふるまう。
+
+- 名乗る: User-Agent に、キットの名前とこのリポジトリの URL（`listen-podcast-persona-kit (+https://github.com/haya256/listen-podcast-persona-kit)`）を入れる。利用者個人の名前や連絡先は入れない
+- 正面から使う: 文字起こしは、使えるときは LISTEN の公式ツール（LISTEN MCP Server）で取る。ページの HTML を読み取るのは、それが使えないときだけ
+- 少しずつ: 取得は利用者が指定した1話ずつ。リクエストの間は空ける
+- 断られたら止まる: 403・429 などのエラーが出たら、再試行せずに止まる。User-Agent を変えるなどして通そうとはしない
 
 ## 注意
 
 - LISTEN の公式ツールではない。LISTEN の仕様が変わると、RSS や文字起こしの取得が動かなくなることがある
+- 使う人は、LISTEN の[利用規約](https://listen.style/terms-of-service)（ヘルプやガイドラインを含む）と配信者の意向に従い、自分の責任で使うこと。このキットは MIT ライセンスで、無保証で提供している
 - 文字起こしは LISTEN の自動生成なので、固有名詞の誤認識が多い。まとめの「誤認識メモ」に残していく
 - 文字起こしと整理データは、番組の発言をもとにした個人用のデータとして扱う。原文の長い引用は避け、要約と短いフレーズにとどめる
 - 自分以外の番組を対象にするときは、配信者の意向に配慮すること

@@ -34,11 +34,10 @@ from episodes_csv import (
     slug_of,
 )
 from fetch_transcripts import find_row
-from podcast_config import PROJECT_ROOT, TRANSCRIPTS_DIR, load_config, require_csv
+from podcast_config import PROJECT_ROOT, TRANSCRIPTS_DIR, USER_AGENT, load_config, require_csv
 from sync_episodes import fetch_rss, parse_items
 
 DEFAULT_MODEL = "turbo"
-USER_AGENT = "podcast-knowledge-kit"
 
 INSTALL_HINT = (
     "whisper コマンドが見つかりません。Whisper での文字起こしは任意の機能です。\n"

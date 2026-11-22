@@ -19,6 +19,10 @@ PRIVATE_DIR = DATA_DIR / "private"
 CSV_PATH = PRIVATE_DIR / "episodes.csv"
 KNOWLEDGE_DIR = PRIVATE_DIR / "knowledge"
 
+# LISTEN などへアクセスするときに名乗る名前。どのツールからのアクセスか相手が分かるよう、
+# キットの名前とリポジトリの URL を入れる（利用者個人の名前や連絡先は入れない）
+USER_AGENT = "listen-podcast-persona-kit (+https://github.com/haya256/listen-podcast-persona-kit)"
+
 SETUP_HINT = (
     f"セットアップがまだです。\n"
     f"  cp {TEMPLATE_PATH.relative_to(PROJECT_ROOT)} {CONFIG_PATH.relative_to(PROJECT_ROOT)}\n"

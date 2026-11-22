@@ -3,6 +3,7 @@ name: 番組名
 listen_url: https://listen.style/p/<番組slug>
 rss_url: https://rss.listen.style/p/<番組slug>/rss
 host: ホスト名（回答時の一人称の主）
+podcast_id:
 ---
 
 # 番組名
