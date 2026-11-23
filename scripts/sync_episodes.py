@@ -9,6 +9,9 @@
 - 突き合わせのキーはURL末尾のslug（公開日時は空の回があるためキーに使えない）
 - RSSから取るのはタイトル・公開日時・URLだけ
 - 手動管理の列（フォロワー限定・文字起こし・エピソード番号）は上書きしない
+- エピソード番号: 既存の行の番号が、公開日時の古い順に1からの連番にそろっているときだけ、
+  それより新しい追加行に続きの番号を振る（そろっていなければ空のまま）。RSS に出ないフォロワー限定回を
+  あとから手で足したときは、その後ろの回の番号を振り直す必要がある
 - RSSに無い既存行は削除しない（フォロワー限定回はRSSに出ないため）
 """
 
@@ -124,6 +127,25 @@ def merge(rows, items):
     return added, retitled, dated
 
 
+def number_new_rows(existing, added_rows):
+    """既存の行が 1 からの連番なら、それより新しい追加行に続きの番号を振る。振った行数か、振れない理由を返す。"""
+    if not added_rows:
+        return 0
+    if not existing:
+        return "既存の行がないため"
+    if any(not row[COL_PUBLISHED_AT] for row in existing + added_rows):
+        return "公開日時が空の行があるため"
+    ordered = sorted(existing, key=lambda row: row[COL_PUBLISHED_AT])
+    if [row[COL_EPISODE_NO] for row in ordered] != [str(i) for i in range(1, len(ordered) + 1)]:
+        return "既存の行の番号が1からの連番になっていないため"
+    latest = ordered[-1][COL_PUBLISHED_AT]
+    if any(row[COL_PUBLISHED_AT] <= latest for row in added_rows):
+        return "既存の最新の回より古い回が追加されたため"
+    for i, row in enumerate(sorted(added_rows, key=lambda row: row[COL_PUBLISHED_AT]), len(ordered) + 1):
+        row[COL_EPISODE_NO] = str(i)
+    return len(added_rows)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--apply", action="store_true", help="実際に書き込む（指定しなければドライラン）")
@@ -144,13 +166,20 @@ def main():
         print(f"{CSV_PATH.relative_to(PROJECT_ROOT)} が無いので新規作成します")
 
     before = len(rows)
+    existing = list(rows)
     added, retitled, dated = merge(rows, items)
+    added_slugs = {item["slug"] for item in added}
+    added_rows = [row for row in rows if slug_of(row) in added_slugs]
+    numbered = number_new_rows(existing, added_rows)
 
     rss_slugs = {item["slug"] for item in items}
     only_local = [row for row in rows if slug_of(row) not in rss_slugs]
 
-    for item in added:
-        print(f"追加: {item['title']}（{item['published_at'] or item['slug']}）")
+    for row in sorted(added_rows, key=lambda row: row[COL_PUBLISHED_AT]):
+        number = f"第{row[COL_EPISODE_NO]}話 " if row[COL_EPISODE_NO] else ""
+        print(f"追加: {number}{row[COL_TITLE]}（{row[COL_PUBLISHED_AT] or slug_of(row)}）")
+    if isinstance(numbered, str):
+        print(f"エピソード番号は振りませんでした（{numbered}）")
     for old, new in retitled:
         print(f"改題: {old}\n   → {new}")
     for item in dated:
