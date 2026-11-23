@@ -28,7 +28,8 @@ AI（Claude Code）と一緒に使うことを前提にしている。番組を1
 | `CLAUDE.md` | AIへの指示。回答の作り方、根拠の示し方、整理のルール |
 | `scripts/sync_episodes.py` | RSSからエピソード一覧（`episodes.csv`）を作成・最新化 |
 | `scripts/fetch_transcripts.py` | 指定した回の文字起こし（VTT）を取得（LISTEN MCP Server が使えればそれで、なければ公開の文字起こしから） |
-| `scripts/listen_mcp.py` | （応用編・任意）LISTEN の公式ツール「LISTEN MCP Server」で、限定回・有料回を含む文字起こしを取得。公開日時の補完も |
+| `scripts/listen_mcp.py` | （応用編・任意）LISTEN の公式ツール「LISTEN MCP Server」で、限定回・有料回を含む文字起こしを取得。公開日時の補完と、番組の持ち主なら確認済みの誤認識の直しを LISTEN に反映することも |
+| `scripts/listen_title.py` | （応用編・任意。番組の持ち主向け）エピソードタイトルを、ブラウザ（Playwright）で LISTEN の編集画面から変更 |
 | `scripts/whisper_transcribe.py` | （応用編・任意）LISTEN に文字起こしがない回を、音声から Whisper で文字起こし |
 | `scripts/check_knowledge.py` | 整理済みデータ（`episodes.csv` と `knowledge/`）の整合性を検査 |
 | `scripts/check_public.py` | 公開前に番組固有の情報の混入を検査 |
@@ -176,10 +177,11 @@ python3 scripts/check_knowledge.py --fix
 
 - 文字起こしを、エピソードページの HTML を読み取らずに取る（`fetch_transcripts.py` は、使えるときは自動でこちらを使う）
 - 番組の持ち主なら、フォロワー限定回・有料回の文字起こしも取る
+- 番組の持ち主なら、確認済みの誤認識の直しを LISTEN の文字起こしに反映する（`fix`。書き込みの権限があるトークンが要る）
 
 必要なもの:
 
-- 環境変数 `LISTEN_API_TOKEN`。読み取りだけなので read 権限で足りる。トークンはリポジトリやファイルに書かない
+- 環境変数 `LISTEN_API_TOKEN`。`fix` 以外は読み取りだけなので read 権限で足りる。トークンはリポジトリやファイルに書かない
 - `npx`（Node.js）。MCP Server は、ヘルプに書かれた版（v1.1.0）を `npx` で起動する
 
 ```bash
@@ -187,6 +189,8 @@ LISTEN_API_TOKEN=<トークン> python3 scripts/fetch_transcripts.py 20260705-07
 LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py transcript 20260705-073500 # 同じ
 LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py sync                       # 公開日時の補完（ドライラン）
 LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py sync --apply               # 書き込む
+LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py fix 20260705-073500 fixes.json          # 直しの試し実行
+LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py fix 20260705-073500 fixes.json --apply  # LISTEN に反映
 ```
 
 1Password に保存しているなら、`LISTEN_API_TOKEN="$(op read 'op://<保管庫>/<項目>/credential')" python3 scripts/...` のように、実行のときだけ渡せる。
@@ -194,8 +198,25 @@ LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py sync --apply      
 - `transcript`: 指定した回の文字起こし（VTT）を取得する。指定の仕方は `fetch_transcripts.py` と同じ。エピソード ID は新しい50話の一覧から探し、見つからない古い回はエピソードページを1回だけ取得して探す
 - `sync`: MCP Server のエピソード一覧は新しい50話だけで、slug・公開範囲・価格を返さない。そのため行は追加せず、公開日時が空の行を埋めることと、`episodes.csv` にない回（RSS に載らないフォロワー限定回など）を表示することだけをする
 - 番組 ID は `config/podcast.md` の `podcast_id:` に書いておける。なければトークンの持ち主の番組から番組名で探し、見つからなければ番組名で検索する。1件に決まれば使って、書く値を表示する
-- 呼ぶのは読み取りのツールだけ。文字起こしの編集などの更新系のツールは呼ばない
+- `fix`: 確認済みの直しを、1話ずつ LISTEN の文字起こしに反映する。直しは `[{"time": "01:22", "before": "指キー", "after": "YubiKey"}]` のような JSON で渡す。`time` の前後15秒の発言に `before` がちょうど1か所あるときだけ、その語句を置き換える（発言を丸ごと書き換えない）。既定は試し実行（LISTEN にも dryRun で送る）で、`--apply` のときだけ反映し、反映したらその回の VTT を取り直す。文字起こしの版（version）が途中で変わったときやエラーのときは、再試行せずに止める
+- 呼ぶのは読み取りのツールだけ。例外は `fix` で、そのときだけ文字起こしの本文を直すツール（`update_episode_transcript_segments`）を呼ぶ。ほかの更新系のツールは呼ばない
 - LISTEN の GraphQL API は直接呼ばない。LISTEN の [API ドキュメント](https://listen.style/api-docs)で、スマホアプリ用の内部 API として「依存しないでください」とされているため
+
+## 応用編: タイトルの変更（任意・番組の持ち主向け）
+
+LISTEN MCP Server にはタイトルを変えるツールがないので、`listen_title.py` は Playwright でブラウザを動かし、エピソードの編集画面（`<エピソードURL>/edit`）からタイトルを変える。
+
+```bash
+pip install playwright && playwright install chromium   # 入っていなければ
+python3 scripts/listen_title.py --login                                     # 初回だけ。表示されたブラウザでログイン
+python3 scripts/listen_title.py 20260705-073500 "新しいタイトル"               # 試し実行（入力して止まる。保存しない）
+python3 scripts/listen_title.py 20260705-073500 "新しいタイトル" --apply       # 保存して、episodes.csv も直す
+```
+
+- ブラウザを画面に表示して動かす（WSL なら WSLg で表示される）
+- ログイン状態は `~/.local/share/listen-podcast-persona-kit/browser-profile` に残る。パスワードと同じように扱う
+- 1回に1話だけ。押すのは名前がちょうど「保存」のボタンだけで、「下書き保存する」「公開予約」は押さない
+- タイトル欄の今の値が `episodes.csv` と違う、ボタンや「エピソードを更新しました」の表示が見つからない、などのときは保存せずに止める。LISTEN の画面の作りが変わると動かなくなることがある
 
 ## 応用編: Whisper で文字起こし（任意）
 

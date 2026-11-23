@@ -5,12 +5,15 @@
     LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py transcript 20260705-073500  # 文字起こし取得
     LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py sync                        # ドライラン
     LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py sync --apply                # 書き込む
+    LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py fix 20260705-073500 fixes.json          # 直しの試し実行
+    LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py fix 20260705-073500 fixes.json --apply  # LISTEN に反映
 
 - LISTEN MCP Server（https://listen.style/document/mcp_server）を、ヘルプに書かれた版（v1.1.0）で起動し、
   そのツールを呼ぶ。LISTEN の内部 API を直接呼ぶことはしない
 - 必要なもの: 環境変数 LISTEN_API_TOKEN（LISTEN の「API Tokens」設定ページで発行。read 権限で足りる）と npx（Node.js）。
   どちらかがなければ案内を出して終わる。なくても他のスクリプトは動く
-- 呼ぶのは読み取りのツールだけ。文字起こしの編集などの更新系のツールは呼ばない
+- 呼ぶのは読み取りのツールだけ。例外は fix（文字起こしの直しの反映）で、そのときだけ
+  update_episode_transcript_segments を呼ぶ。ほかの更新系のツールは呼ばない
 - 番組 ID は config/podcast.md の podcast_id を使う。なければトークンの持ち主の番組から番組名で探し、
   見つからなければ番組名で検索する。1件に決まれば使う
 
@@ -25,6 +28,15 @@ sync:
   次の2つだけを行う
   - 公開日時が空の行を、タイトルが一致する回の公開日時で埋める（--apply のときだけ書き込む）
   - episodes.csv にない回（RSS に載らないフォロワー限定回など）を一覧で表示する
+
+fix（番組の持ち主向け。トークンに書き込みの権限が要る）:
+- 確認済みの直しを、LISTEN の文字起こしに反映する。1回に1話だけ
+- 直しは JSON で渡す: [{"time": "01:22", "before": "指キー", "after": "YubiKey"}, ...]
+  - time は mm:ss か hh:mm:ss。その前後 15 秒の発言から before を探す
+  - before がちょうど1か所にあるときだけ、その語句を after に置き換える（発言を丸ごと書き換えない）。
+    0か所や2か所以上なら止める
+- 既定は試し実行（LISTEN にも dryRun で送る）。--apply を付けたときだけ反映し、反映できたらその回の VTT を取り直す
+- version（取得したときの文字起こしの版）が途中で変わった、エラーが返った、などのときは再試行せずに止める
 """
 
 import argparse
@@ -65,7 +77,17 @@ MCP_COMMAND = ["npx", "-y", f"--package={MCP_PACKAGE_URL}", "listen-mcp-server"]
 GRAPHQL_URL = "https://listen.style/graphql"  # MCP Server の設定値としてヘルプに書かれているもの
 
 # 呼んでよいツール（読み取りだけ）。ここにないツールは呼ばない
-READ_ONLY_TOOLS = {"get_my_podcasts", "search_podcasts", "get_podcast_episodes", "get_episode", "get_episode_transcript"}
+READ_ONLY_TOOLS = {
+    "get_my_podcasts",
+    "search_podcasts",
+    "get_podcast_episodes",
+    "get_episode",
+    "get_episode_transcript",
+    "get_episode_transcript_segments",
+}
+# 更新系で呼んでよいのはこれだけ。fix からだけ、allow_write=True を付けて呼ぶ
+WRITE_TOOLS = {"update_episode_transcript_segments"}
+FIX_WINDOW_SEC = 15  # 直しの time の前後、何秒の発言から探すか
 
 NO_TRANSCRIPT = "Transcript is not available for this episode."
 REQUEST_INTERVAL_SEC = 1  # LISTEN の API は利用者ごとに1分60リクエストまで
@@ -170,9 +192,9 @@ class McpClient:
                 raise McpError(f"{method} がエラーを返しました: {message['error'].get('message', message['error'])}")
             return message.get("result", {})
 
-    def call(self, tool, arguments):
+    def call(self, tool, arguments, allow_write=False):
         """ツールを呼び、返ってきたテキストを返す。"""
-        if tool not in READ_ONLY_TOOLS:
+        if tool not in READ_ONLY_TOOLS and not (allow_write and tool in WRITE_TOOLS):
             raise McpError(f"読み取り以外のツールは呼びません: {tool}")
         wait = REQUEST_INTERVAL_SEC - (time.monotonic() - self._last_call)
         if wait > 0:
@@ -373,6 +395,125 @@ def sync(apply_changes):
     return 0
 
 
+def parse_time(value):
+    """"mm:ss" / "hh:mm:ss" を秒にする。"""
+    parts = str(value).strip().split(":")
+    if not 2 <= len(parts) <= 3 or not all(p.isdigit() for p in parts):
+        raise McpError(f"time の書き方が違います: {value!r}（mm:ss か hh:mm:ss）")
+    seconds = 0
+    for p in parts:
+        seconds = seconds * 60 + int(p)
+    return seconds
+
+
+def load_fixes(path):
+    try:
+        fixes = json.loads(open(path, encoding="utf-8").read())
+    except (OSError, json.JSONDecodeError) as e:
+        raise McpError(f"直しの JSON を読めませんでした（{path}）: {e}")
+    if not isinstance(fixes, list) or not fixes:
+        raise McpError("直しの JSON は、1件以上の配列にしてください")
+    for i, fix in enumerate(fixes, 1):
+        if not isinstance(fix, dict) or not all(isinstance(fix.get(k), str) for k in ("time", "before", "after")):
+            raise McpError(f"{i}件目: time・before・after を文字列で書いてください")
+        if not fix["before"] or fix["before"] == fix["after"]:
+            raise McpError(f"{i}件目: before が空か、after と同じです")
+        fix["seconds"] = parse_time(fix["time"])
+    return fixes
+
+
+def tool_body(text, tool):
+    """セグメント系ツールの {"status": 200, "body": ...} を読み、200 以外なら止める。"""
+    try:
+        data = json.loads(text or "{}")
+    except json.JSONDecodeError:
+        raise McpError(f"{tool} の結果を読めませんでした: {text[:200]}")
+    status = data.get("status") if isinstance(data, dict) else None
+    if status is not None and status != 200:
+        raise McpError(f"{tool} が HTTP {status} を返しました: {json.dumps(data.get('body'), ensure_ascii=False)[:300]}")
+    return data.get("body", data) if isinstance(data, dict) else data
+
+
+def segments_around(client, episode_id, seconds):
+    """seconds の前後 FIX_WINDOW_SEC 秒にかかる発言と version を返す。"""
+    start, end = max(0, seconds - FIX_WINDOW_SEC), seconds + FIX_WINDOW_SEC
+    segments, version, offset = [], None, 0
+    while True:
+        args = {"episodeId": episode_id, "start": start, "end": end, "limit": 200}
+        if offset:
+            args["offset"] = offset
+        tool = "get_episode_transcript_segments"
+        data = (tool_body(client.call(tool, args), tool) or {}).get("data") or {}
+        if version is not None and data.get("version") != version:
+            raise McpError("取得の途中で文字起こしの version が変わりました。ここで止めます")
+        version = data.get("version")
+        segments += data.get("segments") or []
+        offset = data.get("next_offset")
+        if not offset:
+            break
+    segments = [s for s in segments if s.get("end", 0) >= start and s.get("start", 0) <= end]
+    return segments, version
+
+
+def fix_transcript(rows, fieldnames, key, fixes_path, apply_changes):
+    from fetch_transcripts import find_row
+
+    config = load_config(required=("name", "listen_url"))
+    row = find_row(rows, key)
+    if row is None:
+        print(f"エラー: エピソード「{key}」が episodes.csv に見つかりません")
+        return 1
+    label = f"{row[COL_TITLE]}（{row[COL_PUBLISHED_AT] or slug_of(row)}）"
+
+    try:
+        fixes = load_fixes(fixes_path)
+        with McpClient() as client:
+            podcast_id = find_podcast_id(client, config)
+            episode_id = find_episode_id(client, podcast_id, recent_episodes(client, podcast_id), row)
+
+            version, texts, originals = None, {}, {}
+            for i, fix in enumerate(fixes, 1):
+                segments, seg_version = segments_around(client, episode_id, fix["seconds"])
+                if version is not None and seg_version != version:
+                    raise McpError("取得の途中で文字起こしの version が変わりました。ここで止めます")
+                version = seg_version
+                for seg in segments:
+                    originals.setdefault(seg["index"], seg["text"])
+                    texts.setdefault(seg["index"], seg["text"])
+                hits = [seg["index"] for seg in segments for _ in range(texts[seg["index"]].count(fix["before"]))]
+                where = f"{i}件目（{fix['time']}「{fix['before']}」→「{fix['after']}」）"
+                if len(hits) != 1:
+                    raise McpError(
+                        f"{where}: 前後 {FIX_WINDOW_SEC} 秒の発言に「{fix['before']}」が {len(hits)} か所あります"
+                        "（ちょうど1か所のときだけ直します）。ここで止めます"
+                    )
+                texts[hits[0]] = texts[hits[0]].replace(fix["before"], fix["after"], 1)
+
+            changed = sorted(i for i in texts if texts[i] != originals[i])
+            print(f"{label}: 直す発言 {len(changed)} 件（直し {len(fixes)} 件）")
+            for index in changed:
+                print(f"\n[発言 {index}]\n  前: {originals[index]}\n  後: {texts[index]}")
+            if not version:
+                raise McpError("文字起こしの version を取れませんでした。ここで止めます")
+
+            edits = [{"index": i, "text": texts[i]} for i in changed]
+            tool = "update_episode_transcript_segments"
+            arguments = {"episodeId": episode_id, "version": version, "edits": edits}
+            tool_body(client.call(tool, dict(arguments, dryRun=True), allow_write=True), tool)
+            print("\n試し実行（dryRun）: LISTEN が受け付けました")
+            if not apply_changes:
+                print("試し実行です。反映するには --apply を付けてください")
+                return 0
+            tool_body(client.call(tool, dict(arguments, dryRun=False), allow_write=True), tool)
+            print("反映: LISTEN の文字起こしを更新しました")
+    except McpError as e:
+        print(f"エラー: {e}\nここで止めます。")
+        return 1
+
+    print("\nVTT を取り直します")
+    return fetch_transcripts(rows, fieldnames, [key])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command")
@@ -380,6 +521,10 @@ def main():
     transcript_parser.add_argument("keys", nargs="+", help="公開日時キー・CSVの公開日時表記・slug")
     sync_parser = commands.add_parser("sync", help="公開日時の補完と、episodes.csv にない回の表示")
     sync_parser.add_argument("--apply", action="store_true", help="実際に書き込む（指定しなければドライラン）")
+    fix_parser = commands.add_parser("fix", help="確認済みの直しを LISTEN の文字起こしに反映する（番組の持ち主向け）")
+    fix_parser.add_argument("key", help="公開日時キー・CSVの公開日時表記・slug（1話だけ）")
+    fix_parser.add_argument("fixes", help='直しの JSON ファイル（[{"time": "01:22", "before": "…", "after": "…"}]）')
+    fix_parser.add_argument("--apply", action="store_true", help="LISTEN に反映する（指定しなければ試し実行）")
     args = parser.parse_args()
     if not args.command:
         print(__doc__.strip())
@@ -396,6 +541,10 @@ def main():
         require_csv()
         rows, fieldnames = load_rows()
         return fetch_transcripts(rows, fieldnames, args.keys)
+    if args.command == "fix":
+        require_csv()
+        rows, fieldnames = load_rows()
+        return fix_transcript(rows, fieldnames, args.key, args.fixes, args.apply)
     return sync(args.apply)
 
 

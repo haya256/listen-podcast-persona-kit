@@ -51,7 +51,7 @@ LISTEN で配信されているポッドキャストでの発言を整理し、�
 - トークンがない環境でもエラーにならないようにする。`sync_episodes.py` などは MCP Server を前提にしない。`fetch_transcripts.py` は、MCP Server が使えるとき（`LISTEN_API_TOKEN` と `npx` がある）だけ `scripts/listen_mcp.py` 経由で取り、使えなければ公開の文字起こしから取る
 - LISTEN の GraphQL（`https://listen.style/graphql`）は直接呼ばない。LISTEN の API ドキュメント（https://listen.style/api-docs ）で、スマホアプリ用の既存 API として「内部APIの仕様には依存しないでください」とされているため。MCP Server が中で使うのは LISTEN 自身の実装なので構わない
 - MCP Server は、ヘルプに書かれた版（`listen_mcp.py` の `MCP_VERSION`）で起動する。版を上げるときは、ヘルプとリリースの中身を確かめてから
-- 呼ぶのは読み取りのツールだけ（`listen_mcp.py` の `READ_ONLY_TOOLS`）。トークンには更新の権限もありうるので、文字起こしの編集（`update_episode_transcript_segments`）などの更新系は呼ばない
+- 呼ぶのは読み取りのツールだけ（`listen_mcp.py` の `READ_ONLY_TOOLS`）。トークンには更新の権限もありうるので、更新系は呼ばない。例外は下の「文字起こしの直しを LISTEN に反映するとき」だけ
 - MCP Server で取れた値（公開日時など）は、`episodes.csv` などにそのまま書いてよい（出どころは記録しない）。ただし、それらの値が空のままでも運用や検査が壊れないようにする
 
 ### 文字起こしを MCP Server で取るとき
@@ -62,6 +62,22 @@ LISTEN で配信されているポッドキャストでの発言を整理し、�
 - 番組 ID は `config/podcast.md` の任意項目 `podcast_id`。なければトークンの持ち主の番組から番組名で探し、見つからなければ番組名で検索して決め、書く値を表示する
 - 限定回の文字起こしには、限定公開を前提にした情報（接続先など）が書かれていることがある。まとめにも書かない
 
+### 文字起こしの直しを LISTEN に反映するとき（番組の持ち主向け）
+- 反映は `python3 scripts/listen_mcp.py fix <キー> <直しのJSON>` で行う（中で `update_episode_transcript_segments` を呼ぶ。`listen_mcp.py` の `WRITE_TOOLS`）。Claude Code につながった MCP Server のツールを直接呼んで反映しない
+- 反映してよいのは、トークンの持ち主の番組で、本人が1話ずつ頼んだときだけ。ほかの人の番組では提案もしない
+- 反映するのは確認済みの直しだけ。「〜か」「未確認」のような推測のままのものは入れない。知らない人名は推測で直さず本人に確認する
+- 直しの JSON は scratchpad に置き、`before` には、その発言の中で1か所に決まるだけの長さの語句を入れる（前後15秒の発言で2か所以上あるとスクリプトが止まる）
+- まず試し実行（`--apply` なし）をして、直す前後の発言を本人に見せ、承認を得てから `--apply` を付ける。反映すると公開中の文字起こしが変わるため
+- エラー（権限がない、version が変わった、など）は「通信でエラーが出たとき」と同じく、そこで止めて報告する。再試行しない
+- 反映したら、まとめの「文字起こしの誤認識メモ」の該当行に「（LISTEN に反映済み）」と書く。反映した回は VTT が取り直されるので、まとめの発言の言い回しと文字起こしが変わることがある
+
+## タイトルを変えるとき（応用編・番組の持ち主向け）
+- `python3 scripts/listen_title.py <キー> "<新しいタイトル>"` で行う（Playwright でブラウザを動かす。LISTEN MCP Server にはタイトルを変えるツールがない）。本人が1話ずつ頼んだときだけ
+- 新しいタイトルは本人の OK をもらってから入れる。まず試し実行（`--apply` なし）でスクリーンショットを見せ、承認を得てから `--apply` を付ける
+- 初回やログインが切れたときは、本人に `python3 scripts/listen_title.py --login` を実行してもらう（表示されたブラウザで本人がログインする）。ログイン状態のプロファイルの中身は読まない
+- 止まったとき（タイトル欄の値が違う、ボタンや更新の表示が見つからない、エラー）は、再試行せずに報告する。画面の作りが変わったようなら、直してよいか本人に聞く
+- 保存できたら、`episodes.csv` はスクリプトが直す。まとめの frontmatter の `title` と見出しは Claude が直し、旧タイトルが `knowledge/` に残っていれば直す
+
 ## ディレクトリ
 
 ### 公開（汎用キット）
@@ -71,7 +87,8 @@ LISTEN で配信されているポッドキャストでの発言を整理し、�
 - `scripts/sync_episodes.py` — RSSから `episodes.csv` を作成・最新化する
 - `scripts/fetch_transcripts.py` — 指定回の文字起こしVTTを取得する（MCP Server が使えればそれで、なければ公開の文字起こしから）
 - `scripts/check_public.py` — 公開前に番組固有の情報の混入を検査する
-- `scripts/listen_mcp.py` — （応用編）LISTEN MCP Server で、限定回・有料回を含む文字起こしVTTを取得する（`transcript`）。公開日時の補完と、episodes.csv にない回の表示をする（`sync`）。要 `LISTEN_API_TOKEN` と `npx`
+- `scripts/listen_mcp.py` — （応用編）LISTEN MCP Server で、限定回・有料回を含む文字起こしVTTを取得する（`transcript`）。公開日時の補完と、episodes.csv にない回の表示をする（`sync`）。番組の持ち主なら、確認済みの直しを LISTEN の文字起こしに反映する（`fix`）。要 `LISTEN_API_TOKEN` と `npx`
+- `scripts/listen_title.py` — （応用編・任意・番組の持ち主向け）エピソードタイトルを、Playwright でブラウザを動かして LISTEN の編集画面から変更する。試し実行が既定で、`--apply` で保存して episodes.csv も直す。要 Python の playwright と Chromium、初回は `--login`
 - `scripts/whisper_transcribe.py` — （応用編・任意）LISTEN に文字起こしがない回を、RSS の音声から Whisper で文字起こしする。要 `whisper` コマンド
 - `scripts/check_knowledge.py` — 整理済みデータ（episodes.csv と knowledge/）の整合性を検査する
 - `templates/` — `config/podcast.md` と `knowledge/` 配下の雛形
