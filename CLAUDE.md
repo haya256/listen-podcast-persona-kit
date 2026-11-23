@@ -59,7 +59,7 @@ LISTEN で配信されているポッドキャストでの発言を整理し、�
 - Claude Code に MCP Server がつながっていて、ツール（`get_episode_transcript` など）を直接呼べるときも、文字起こしの保存はスクリプトで行う。ツールの結果を Claude がファイルに書き写すと、長い回で文面が変わるおそれがあるため
 - `episodeId` は URL 末尾の slug ではなく、26文字の ID（`01` で始まる英数字）。`listen_mcp.py` が、新しい50話の一覧（`get_podcast_episodes`）から公開日時で探し、なければエピソードページから探す
 - `get_podcast_episodes` の `pubDate` は UTC。episodes.csv の公開日時（JST）と突き合わせるときは9時間足す（`listen_mcp.py` の `to_jst`）
-- 番組 ID は `config/podcast.md` の任意項目 `podcast_id`。なければ番組名で検索して決め、書く値を表示する
+- 番組 ID は `config/podcast.md` の任意項目 `podcast_id`。なければトークンの持ち主の番組から番組名で探し、見つからなければ番組名で検索して決め、書く値を表示する
 - 限定回の文字起こしには、限定公開を前提にした情報（接続先など）が書かれていることがある。まとめにも書かない
 
 ## ディレクトリ

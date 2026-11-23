@@ -11,7 +11,8 @@
 - 必要なもの: 環境変数 LISTEN_API_TOKEN（LISTEN の「API Tokens」設定ページで発行。read 権限で足りる）と npx（Node.js）。
   どちらかがなければ案内を出して終わる。なくても他のスクリプトは動く
 - 呼ぶのは読み取りのツールだけ。文字起こしの編集などの更新系のツールは呼ばない
-- 番組 ID は config/podcast.md の podcast_id を使う。なければ番組名で検索し、1件に決まれば使う
+- 番組 ID は config/podcast.md の podcast_id を使う。なければトークンの持ち主の番組から番組名で探し、
+  見つからなければ番組名で検索する。1件に決まれば使う
 
 transcript:
 - 指定の仕方は fetch_transcripts.py と同じ（公開日時キー・CSVの公開日時表記・slug。複数指定可）
@@ -64,7 +65,7 @@ MCP_COMMAND = ["npx", "-y", f"--package={MCP_PACKAGE_URL}", "listen-mcp-server"]
 GRAPHQL_URL = "https://listen.style/graphql"  # MCP Server の設定値としてヘルプに書かれているもの
 
 # 呼んでよいツール（読み取りだけ）。ここにないツールは呼ばない
-READ_ONLY_TOOLS = {"search_podcasts", "get_podcast_episodes", "get_episode", "get_episode_transcript"}
+READ_ONLY_TOOLS = {"get_my_podcasts", "search_podcasts", "get_podcast_episodes", "get_episode", "get_episode_transcript"}
 
 NO_TRANSCRIPT = "Transcript is not available for this episode."
 REQUEST_INTERVAL_SEC = 1  # LISTEN の API は利用者ごとに1分60リクエストまで
@@ -202,13 +203,21 @@ def find_podcast_id(client, config):
     if podcast_id:
         return podcast_id
     name = config["name"]
-    hits = [
-        p for p in json.loads(client.call("search_podcasts", {"query": name}) or "[]")
-        if normalize_title(p.get("title")) == normalize_title(name)
-    ]
+
+    def matches(tool, arguments):
+        return [
+            p for p in json.loads(client.call(tool, arguments) or "[]")
+            if normalize_title(p.get("title")) == normalize_title(name)
+        ]
+
+    # まずトークンの持ち主の番組から探す（検索は表記の違い（〜と～）で引っかからないことがあるため）。
+    # 持ち主の番組でなければ、番組名で検索する
+    hits = matches("get_my_podcasts", {})
+    if not hits:
+        hits = matches("search_podcasts", {"query": name})
     if len(hits) != 1:
         raise McpError(
-            f"番組「{name}」を検索で1つに決められませんでした（該当 {len(hits)} 件）。"
+            f"番組「{name}」を自分の番組と検索から1つに決められませんでした（該当 {len(hits)} 件）。"
             f"{CONFIG_PATH.relative_to(PROJECT_ROOT)} の frontmatter に podcast_id を書いてください"
         )
     podcast_id = hits[0]["id"]

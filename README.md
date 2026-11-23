@@ -193,7 +193,7 @@ LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py sync --apply      
 
 - `transcript`: 指定した回の文字起こし（VTT）を取得する。指定の仕方は `fetch_transcripts.py` と同じ。エピソード ID は新しい50話の一覧から探し、見つからない古い回はエピソードページを1回だけ取得して探す
 - `sync`: MCP Server のエピソード一覧は新しい50話だけで、slug・公開範囲・価格を返さない。そのため行は追加せず、公開日時が空の行を埋めることと、`episodes.csv` にない回（RSS に載らないフォロワー限定回など）を表示することだけをする
-- 番組 ID は `config/podcast.md` の `podcast_id:` に書いておける。なければ番組名で検索し、1件に決まれば使って、書く値を表示する
+- 番組 ID は `config/podcast.md` の `podcast_id:` に書いておける。なければトークンの持ち主の番組から番組名で探し、見つからなければ番組名で検索する。1件に決まれば使って、書く値を表示する
 - 呼ぶのは読み取りのツールだけ。文字起こしの編集などの更新系のツールは呼ばない
 - LISTEN の GraphQL API は直接呼ばない。LISTEN の [API ドキュメント](https://listen.style/api-docs)で、スマホアプリ用の内部 API として「依存しないでください」とされているため
 
