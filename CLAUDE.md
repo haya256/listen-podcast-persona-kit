@@ -49,6 +49,7 @@ LISTEN で配信されているポッドキャストでの発言を整理し、�
 このリポジトリは **LISTEN の API トークンがなくても必要十分に機能する**ことを基本とする。LISTEN の公式ツール「LISTEN MCP Server」（https://listen.style/document/mcp_server ）を使う連携は応用編で、あれば RSS で取れない情報（限定回の文字起こしなど）に手が届き、公開回の文字起こしもページの HTML を読み取らずに取れる、という位置づけ。
 
 - トークンがない環境でもエラーにならないようにする。`sync_episodes.py` などは MCP Server を前提にしない。`fetch_transcripts.py` は、MCP Server が使えるとき（`LISTEN_API_TOKEN` と `npx` がある）だけ `scripts/listen_mcp.py` 経由で取り、使えなければ公開の文字起こしから取る
+- LISTEN の REST API（`https://listen.style/api/v1`）は、外部公開 API として案内されているので使ってよい（試験的で仕様が変わりうる）。今はタイトルの変更（`listen_title.py`）だけで使う
 - LISTEN の GraphQL（`https://listen.style/graphql`）は直接呼ばない。LISTEN の API ドキュメント（https://listen.style/api-docs ）で、スマホアプリ用の既存 API として「内部APIの仕様には依存しないでください」とされているため。MCP Server が中で使うのは LISTEN 自身の実装なので構わない
 - MCP Server は、ヘルプに書かれた版（`listen_mcp.py` の `MCP_VERSION`）で起動する。版を上げるときは、ヘルプとリリースの中身を確かめてから
 - 呼ぶのは読み取りのツールだけ（`listen_mcp.py` の `READ_ONLY_TOOLS`）。トークンには更新の権限もありうるので、更新系は呼ばない。例外は下の「文字起こしの直しを LISTEN に反映するとき」だけ
@@ -72,11 +73,10 @@ LISTEN で配信されているポッドキャストでの発言を整理し、�
 - 反映したら、まとめの「文字起こしの誤認識メモ」の該当行に「（LISTEN に反映済み）」と書く。反映した回は VTT が取り直されるので、まとめの発言の言い回しと文字起こしが変わることがある
 
 ## タイトルを変えるとき（応用編・番組の持ち主向け）
-- `python3 scripts/listen_title.py <キー> "<新しいタイトル>"` で行う（Playwright でブラウザを動かす。LISTEN MCP Server にはタイトルを変えるツールがない）。本人が1話ずつ頼んだときだけ
-- 新しいタイトルは本人の OK をもらってから入れる。まず試し実行（`--apply` なし）でスクリーンショットを見せ、承認を得てから `--apply` を付ける
-- 初回やログインが切れたときは、本人に `python3 scripts/listen_title.py --login` を実行してもらう（表示されたブラウザで本人がログインする）。ログイン状態のプロファイルの中身は読まない
-- 止まったとき（タイトル欄の値が違う、ボタンや更新の表示が見つからない、エラー）は、再試行せずに報告する。画面の作りが変わったようなら、直してよいか本人に聞く
-- 保存できたら、`episodes.csv` はスクリプトが直す。まとめの frontmatter の `title` と見出しは Claude が直し、旧タイトルが `knowledge/` に残っていれば直す
+- `python3 scripts/listen_title.py <キー> "<新しいタイトル>"` で行う（LISTEN の REST API の `PATCH /api/v1/episodes/{ID}`。LISTEN MCP Server にはタイトルを変えるツールがない）。本人が1話ずつ頼んだときだけ。要 `LISTEN_API_TOKEN`（update 権限）と `podcast_id`
+- 新しいタイトルは本人の OK をもらってから入れる。まず試し実行（`--apply` なし。何も送らず、LISTEN の今のタイトルが episodes.csv と同じかを確かめて新旧を表示する）をして、承認を得てから `--apply` を付ける
+- `title` は API ドキュメントの PATCH の項目に載っていない。止まったとき（タイトルが episodes.csv と違う、エピソードが見つからない、エラー、変更を送ったのにタイトルが変わらない）は、再試行せずに報告する。API で変えられなくなったようなら、本人に LISTEN の画面から変えてもらう
+- 変更できたら、`episodes.csv` はスクリプトが直す。まとめの frontmatter の `title` と見出しは Claude が直し、旧タイトルが `knowledge/` に残っていれば直す（地の文で回の名前を「」で囲んでいるだけのところは、新しいタイトルを「」で囲む形にそろえる）
 
 ## ディレクトリ
 
@@ -88,7 +88,7 @@ LISTEN で配信されているポッドキャストでの発言を整理し、�
 - `scripts/fetch_transcripts.py` — 指定回の文字起こしVTTを取得する（MCP Server が使えればそれで、なければ公開の文字起こしから）
 - `scripts/check_public.py` — 公開前に番組固有の情報の混入を検査する
 - `scripts/listen_mcp.py` — （応用編）LISTEN MCP Server で、限定回・有料回を含む文字起こしVTTを取得する（`transcript`）。公開日時の補完と、episodes.csv にない回の表示をする（`sync`）。番組の持ち主なら、確認済みの直しを LISTEN の文字起こしに反映する（`fix`）。要 `LISTEN_API_TOKEN` と `npx`
-- `scripts/listen_title.py` — （応用編・任意・番組の持ち主向け）エピソードタイトルを、Playwright でブラウザを動かして LISTEN の編集画面から変更する。試し実行が既定で、`--apply` で保存して episodes.csv も直す。要 Python の playwright と Chromium、初回は `--login`
+- `scripts/listen_title.py` — （応用編・任意・番組の持ち主向け）エピソードタイトルを、LISTEN の REST API で変更する。試し実行が既定で、`--apply` で変更して episodes.csv も直す。要 `LISTEN_API_TOKEN`（update 権限）
 - `scripts/whisper_transcribe.py` — （応用編・任意）LISTEN に文字起こしがない回を、RSS の音声から Whisper で文字起こしする。要 `whisper` コマンド
 - `scripts/check_knowledge.py` — 整理済みデータ（episodes.csv と knowledge/）の整合性を検査する
 - `templates/` — `config/podcast.md` と `knowledge/` 配下の雛形

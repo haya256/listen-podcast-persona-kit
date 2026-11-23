@@ -29,7 +29,7 @@ AI（Claude Code）と一緒に使うことを前提にしている。番組を1
 | `scripts/sync_episodes.py` | RSSからエピソード一覧（`episodes.csv`）を作成・最新化 |
 | `scripts/fetch_transcripts.py` | 指定した回の文字起こし（VTT）を取得（LISTEN MCP Server が使えればそれで、なければ公開の文字起こしから） |
 | `scripts/listen_mcp.py` | （応用編・任意）LISTEN の公式ツール「LISTEN MCP Server」で、限定回・有料回を含む文字起こしを取得。公開日時の補完と、番組の持ち主なら確認済みの誤認識の直しを LISTEN に反映することも |
-| `scripts/listen_title.py` | （応用編・任意。番組の持ち主向け）エピソードタイトルを、ブラウザ（Playwright）で LISTEN の編集画面から変更 |
+| `scripts/listen_title.py` | （応用編・任意。番組の持ち主向け）エピソードタイトルを、LISTEN の REST API で変更 |
 | `scripts/whisper_transcribe.py` | （応用編・任意）LISTEN に文字起こしがない回を、音声から Whisper で文字起こし |
 | `scripts/check_knowledge.py` | 整理済みデータ（`episodes.csv` と `knowledge/`）の整合性を検査 |
 | `scripts/check_public.py` | 公開前に番組固有の情報の混入を検査 |
@@ -204,19 +204,17 @@ LISTEN_API_TOKEN=<トークン> python3 scripts/listen_mcp.py fix 20260705-07350
 
 ## 応用編: タイトルの変更（任意・番組の持ち主向け）
 
-LISTEN MCP Server にはタイトルを変えるツールがないので、`listen_title.py` は Playwright でブラウザを動かし、エピソードの編集画面（`<エピソードURL>/edit`）からタイトルを変える。
+LISTEN MCP Server にはタイトルを変えるツールがないので、`listen_title.py` は LISTEN の [REST API](https://listen.style/api-docs)（`PATCH /api/v1/episodes/{ID}`）でタイトルを変える。
 
 ```bash
-pip install playwright && playwright install chromium   # 入っていなければ
-python3 scripts/listen_title.py --login                                     # 初回だけ。表示されたブラウザでログイン
-python3 scripts/listen_title.py 20260705-073500 "新しいタイトル"               # 試し実行（入力して止まる。保存しない）
-python3 scripts/listen_title.py 20260705-073500 "新しいタイトル" --apply       # 保存して、episodes.csv も直す
+LISTEN_API_TOKEN=<トークン> python3 scripts/listen_title.py 20260705-073500 "新しいタイトル"          # 試し実行（何も変えない）
+LISTEN_API_TOKEN=<トークン> python3 scripts/listen_title.py 20260705-073500 "新しいタイトル" --apply  # 変更して、episodes.csv も直す
 ```
 
-- ブラウザを画面に表示して動かす（WSL なら WSLg で表示される）
-- ログイン状態は `~/.local/share/listen-podcast-persona-kit/browser-profile` に残る。パスワードと同じように扱う
-- 1回に1話だけ。押すのは名前がちょうど「保存」のボタンだけで、「下書き保存する」「公開予約」は押さない
-- タイトル欄の今の値が `episodes.csv` と違う、ボタンや「エピソードを更新しました」の表示が見つからない、などのときは保存せずに止める。LISTEN の画面の作りが変わると動かなくなることがある
+- トークンには update 権限が要る。番組 ID は `config/podcast.md` の `podcast_id:` を使う（なければ `listen_mcp.py sync` で表示される値を書く）
+- 1回に1話だけ。試し実行は、LISTEN の今のタイトルが `episodes.csv` と同じことを確かめて、新旧のタイトルを表示するだけ（API に試し実行の仕組みがないので、変更は送らない）
+- `--apply` のときは、取得したときの revision を付けて送るので、途中で他の編集が入っていれば止まる。変更後にもう一度取得して確かめてから、`episodes.csv` を直す
+- `title` は、API ドキュメントの PATCH の項目には載っていない（送ると変わることは確かめた）。使えなくなったら止まるので、そのときは LISTEN の画面から変える
 
 ## 応用編: Whisper で文字起こし（任意）
 
@@ -281,7 +279,7 @@ python3 scripts/check_public.py
 | 変数 | 既定値 | 用途 |
 |---|---|---|
 | `PODCAST_DATA_DIR` | `./data` | データの置き場所を別の場所にしたいとき |
-| `LISTEN_API_TOKEN` | なし | 応用編の LISTEN MCP Server 連携（`listen_mcp.py`、`fetch_transcripts.py`）を使うときだけ必要 |
+| `LISTEN_API_TOKEN` | なし | 応用編の LISTEN MCP Server 連携（`listen_mcp.py`、`fetch_transcripts.py`）とタイトルの変更（`listen_title.py`）を使うときだけ必要 |
 | `WHISPER_MODEL` | `turbo` | 応用編の `whisper_transcribe.py` で使う Whisper のモデル |
 
 ## LISTEN へのアクセスの作法
